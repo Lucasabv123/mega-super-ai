@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { getHostId } from "./hostIds.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -24,4 +25,5 @@ const server = createServer((req, res) => {
 // Start listening. The callback runs once the server is ready.
 server.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT}/auth/callback`);
+  console.log(`Host ID: ${getHostId()}`);
 });
