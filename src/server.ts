@@ -7,11 +7,37 @@ const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
 
 // This function runs once for every request the browser sends.
+// Remember the secrets from /login so the callback can check them later.
+let pendingState = "";
+let pendingVerifier = "";
+
 // req = what the browser asked for, res = what we send back.
 const server = createServer((req, res) => {
-  // Log every request so you can watch them arrive in Terminal.
-  console.log(`${req.method} ${req.url}`);
+  // Turn the request into a URL object so we can read its parts.
+  const url = new URL(req.url ?? "/", "http://127.0.0.1:1455");
+  // Log only the path, never the ?code=... part (that's a secret).
+  console.log(`${req.method} ${url.pathname}`);
+  
+    if (req.method === "GET" && url.pathname === "/auth/callback") {
+    // Show which pieces OpenAI sent back (names only, not the secret values).
+    console.log([...url.searchParams.keys()]);
 
+    // The state OpenAI sent back to us.
+    const returnedState = url.searchParams.get("state");
+
+    // !== means "is not equal to".
+    if (returnedState !== pendingState) {
+      // 400 = "bad request": this reply doesn't belong to our /login.
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("State mismatch");
+      return;
+    }
+
+    // It matches, so this is the answer to OUR sign-in request.
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Signed in, state OK");
+    return;
+  }
   if (req.method === "GET" && req.url === "/auth/callback") {
     // 200 means "OK". The header tells the browser it's plain text.
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -21,6 +47,8 @@ const server = createServer((req, res) => {
 
   if (req.method === "GET" && req.url === "/login") {
   const secrets = makeAuthSecrets();
+  pendingState = secrets.state;
+  pendingVerifier = secrets.verifier;
   const url = buildAuthorizeUrl(getHostId(), secrets.state, secrets.nonce, secrets.challenge);
   res.writeHead(302, { Location: url }); // 302 = "go to this other page"
   res.end();
