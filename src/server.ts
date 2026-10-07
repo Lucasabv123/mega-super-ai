@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { getHostId } from "./hostIds.js";
 import { makeAuthSecrets } from "./pkce.js";
 import { buildAuthorizeUrl } from "./authUrl.js";
+import { writeFileSync } from "node:fs";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -17,7 +18,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1:1455");
   // Log only the path, never the ?code=... part (that's a secret).
   console.log(`${req.method} ${url.pathname}`);
-  
+
     if (req.method === "GET" && url.pathname === "/auth/callback") {
     // Show which pieces OpenAI sent back (names only, not the secret values).
     console.log([...url.searchParams.keys()]);
@@ -31,6 +32,14 @@ const server = createServer((req, res) => {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("State mismatch");
       return;
+    }
+
+    console.log("Scope:", url.searchParams.get("scope"));
+    
+    const clientId = url.searchParams.get("client_id");
+    if (clientId) {
+      writeFileSync("data/client-id.txt", clientId);
+      console.log("Saved client_id");
     }
 
     // It matches, so this is the answer to OUR sign-in request.
