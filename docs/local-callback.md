@@ -1,0 +1,1 @@
+created a local callback to check if the server works 
