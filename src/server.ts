@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import { getHostId } from "./hostIds.js";
 import { makeAuthSecrets } from "./pkce.js";
 import { buildAuthorizeUrl } from "./authUrl.js";
@@ -82,7 +82,14 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
-    // The chat page sends { provider, message } here and gets { reply } back.
+  // The chat page itself.
+  if (req.method === "GET" && url.pathname === "/") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(readFileSync("public/index.html", "utf8"));
+    return;
+  }
+
+  // The chat page sends { provider, message } here and gets { reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
     // only allow our own page (stops other websites from using your AIs)
     if (req.headers.origin && req.headers.origin !== "http://127.0.0.1:1455") {
@@ -92,9 +99,9 @@ const server = createServer(async (req, res) => {
     }
     let body = "";
     for await (const chunk of req) body += chunk; // read what the page sent
-    const { provider, message } = JSON.parse(body);
+    const { provider, history } = JSON.parse(body);
     try {
-      const reply = provider === "claude" ? await askClaude(message) : await askChatGPT(message);
+      const reply = provider === "claude" ? await askClaude(history) : await askChatGPT(history);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ reply }));
     } catch (err) {

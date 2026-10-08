@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Super Mega AI</title>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }
+    h1 { position: absolute; top: 10px; left: 40px; margin: 0; }
+    #messages div { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
+    .you { background: #e8f0fe; }
+    .ai { background: #f1f1f1; }
+    form { display: flex; gap: 8px; position: fixed; bottom: 20px; left: 0; right: 0; max-width: 668px; margin: 0 auto; }
+    input { flex: 1; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Mega Super AI</h1>
+  <div id="messages"></div>
+  <form id="form">
+    <select id="provider">
+      <option value="chatgpt">ChatGPT</option>
+      <option value="claude">Claude</option>
+    </select>
+    <input id="message" placeholder="Type a message..." autocomplete="off">
+    <button>Send</button>
+  </form>
+
+  <script>
+    const messages = document.getElementById("messages");
+
+    // Adds one chat bubble to the page.
+    function addBubble(text, who) {
+      const div = document.createElement("div");
+      div.className = who;
+      div.textContent = text; // textContent, so AI text can't run code on your page
+      messages.appendChild(div);
+    }
+
+    const history = []; // every message so far
+
+    document.getElementById("form").addEventListener("submit", async (event) => {
+      event.preventDefault(); // stop the page from reloading
+      const provider = document.getElementById("provider").value;
+      const input = document.getElementById("message");
+      const message = input.value;
+      if (!message) return;
+      addBubble(message, "you");
+      history.push({ role: "user", content: message });
+      input.value = "";
+
+      const response = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // TODO (2 blanks): which AI to use, and what you typed
+        body: JSON.stringify({ provider: provider, history: history }),
+      });
+      const data = await response.json();
+      if (data.reply) history.push({ role: "assistant", content: data.reply });
+      addBubble(data.reply ?? data.error, "ai");
+    });
+  </script>
+</body>
+</html>
