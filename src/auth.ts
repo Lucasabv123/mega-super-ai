@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { refreshTokens } from "./token.js";
+import { existsSync } from "node:fs";
 
 export async function getAccessToken() {
   const tokens = JSON.parse(readFileSync("data/tokens.json", "utf8"));
@@ -16,4 +17,8 @@ export async function getAccessToken() {
   const expires_at = Date.now() + newTokens.expires_in * 1000; // expires_in is seconds, Date.now() is milliseconds
   writeFileSync("data/tokens.json", JSON.stringify({ ...tokens, ...newTokens, expires_at }, null, 2));
   return newTokens.access_token;
+}
+export function getSavedClientId() {
+  if (!existsSync("data/client-id.txt")) return null;
+  return readFileSync("data/client-id.txt", "utf8").trim();
 }

@@ -4,6 +4,7 @@ import { getHostId } from "./hostIds.js";
 import { makeAuthSecrets } from "./pkce.js";
 import { buildAuthorizeUrl } from "./authUrl.js";
 import { exchangeCode } from "./token.js";
+import { getSavedClientId } from "./auth.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -26,7 +27,7 @@ const server = createServer(async (req, res) => {
     const secrets = makeAuthSecrets();
     pendingState = secrets.state;
     pendingVerifier = secrets.verifier;
-    const authorizeUrl = buildAuthorizeUrl(getHostId(), secrets.state, secrets.nonce, secrets.challenge);
+    const authorizeUrl = buildAuthorizeUrl(getHostId(), secrets.state, secrets.nonce, secrets.challenge, getSavedClientId());
     res.writeHead(302, { Location: authorizeUrl }); // 302 = "go to this other page"
     res.end();
     return;
@@ -51,7 +52,7 @@ const server = createServer(async (req, res) => {
     console.log("Scope:", url.searchParams.get("scope"));
 
     // Save our app's registration ID so future sign-ins can reuse it.
-    const clientId = url.searchParams.get("client_id");
+    const clientId = url.searchParams.get("client_id") ?? getSavedClientId();
     if (clientId) {
       writeFileSync("data/client-id.txt", clientId);
       console.log("Saved client_id");
