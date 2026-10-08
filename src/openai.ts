@@ -1,0 +1,34 @@
+import { getAccessToken } from "./auth.js";
+export async function askChatGPT(message: string) { const accessToken = await getAccessToken();
+
+const response = await fetch("https://api.openai.com/v1/responses", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "gpt-6.1-sol",
+    input: [{ role: "user", content: message}],
+    store: false,  
+    stream: true, 
+  }),
+});
+
+
+if (!response.ok) {
+  throw new Error(`Error ${response.status}: ${await response.text()}`);
+}
+
+const text = await response.text();
+let reply = "";
+let finished = false;
+for (const line of text.split("\n")) {
+  if (!line.startsWith("data: ")) continue;
+  const event = JSON.parse(line.slice(6));
+  if (event.type === "response.output_text.delta") reply += event.delta;
+  if (event.type === "response.completed") finished = true;
+}
+if (!finished) throw new Error("ChatGPT did not finish");
+return reply;
+}
