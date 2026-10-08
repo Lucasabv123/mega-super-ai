@@ -19,6 +19,11 @@ db.exec(`
     provider TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
+    CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export function createChat(): number {
@@ -48,4 +53,17 @@ export function listChats() {
       (SELECT content FROM messages WHERE chat_id = chats.id ORDER BY id LIMIT 1) AS title
     FROM chats ORDER BY id DESC
   `).all() as { id: number; title: string }[];
+}
+// Shared memory: facts about you that both AIs get to see.
+export function addMemory(content: string) {
+  db.prepare("INSERT INTO memories (content) VALUES (?)").run(content);
+}
+
+export function listMemories() {
+  return db.prepare("SELECT id, content FROM memories ORDER BY id")
+    .all() as { id: number; content: string }[];
+}
+
+export function deleteMemory(id: number) {
+  db.prepare("DELETE FROM memories WHERE id = ?").run(id);
 }

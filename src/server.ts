@@ -8,6 +8,7 @@ import { getSavedClientId } from "./auth.js";
 import { askChatGPT } from "./openai.js";   
 import { askClaude } from "./claude.js";
 import { createChat, getLatestChatId, saveMessage, getMessages, listChats } from "./db.js";
+import { listMemories } from "./db.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -132,7 +133,9 @@ const server = createServer(async (req, res) => {
     saveMessage(chatId, "user", message, provider);
     try {
       const history = getMessages(chatId); // the whole chat, from the database
-      const reply = provider === "claude" ? await askClaude(history) : await askChatGPT(history);
+      const facts = listMemories().map((m) => "- " + m.content).join("\n");
+      const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)");
+      const reply = provider === "claude" ? await askClaude(history, memory) : await askChatGPT(history, memory);
       saveMessage(chatId, "assistant", reply, provider);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ chatId, reply }));

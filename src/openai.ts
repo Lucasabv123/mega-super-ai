@@ -1,6 +1,6 @@
 import { getAccessToken } from "./auth.js";
 export type Message = { role: "user" | "assistant"; content: string };
-export async function askChatGPT(history: Message[]) { const accessToken = await getAccessToken();
+export async function askChatGPT(history: Message[], memory: string) { const accessToken = await getAccessToken();
     
 
 const response = await fetch("https://api.openai.com/v1/responses", {
@@ -11,9 +11,10 @@ const response = await fetch("https://api.openai.com/v1/responses", {
   },
   body: JSON.stringify({
     model: "gpt-6.1-sol",
+    instructions: memory,
     input: history,
     store: false,  
-    stream: true, 
+    stream: true,
   }),
 });
 
