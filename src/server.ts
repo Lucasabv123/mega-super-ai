@@ -5,6 +5,8 @@ import { makeAuthSecrets } from "./pkce.js";
 import { buildAuthorizeUrl } from "./authUrl.js";
 import { exchangeCode } from "./token.js";
 import { getSavedClientId } from "./auth.js";
+import { askChatGPT } from "./openai.js";   
+import { askClaude } from "./claude.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -41,6 +43,7 @@ const server = createServer(async (req, res) => {
     // The state OpenAI sent back to us.
     const returnedState = url.searchParams.get("state");
 
+    
     // !== means "is not equal to".
     if (returnedState !== pendingState) {
       // 400 = "bad request": this reply doesn't belong to our /login.
@@ -76,6 +79,28 @@ const server = createServer(async (req, res) => {
       console.error(error);
       res.writeHead(500, { "Content-Type": "text/plain" });
       res.end("Token exchange failed, check Terminal");
+    }
+    return;
+  }
+    // The chat page sends { provider, message } here and gets { reply } back.
+  if (req.method === "POST" && url.pathname === "/chat") {
+    // only allow our own page (stops other websites from using your AIs)
+    if (req.headers.origin && req.headers.origin !== "http://127.0.0.1:1455") {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk; // read what the page sent
+    const { provider, message } = JSON.parse(body);
+    try {
+      const reply = provider === "claude" ? await askClaude(message) : await askChatGPT(message);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ reply }));
+    } catch (err) {
+      console.error(err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Something went wrong, check Terminal" }));
     }
     return;
   }
