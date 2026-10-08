@@ -7,6 +7,7 @@ import { exchangeCode } from "./token.js";
 import { getSavedClientId } from "./auth.js";
 import { askChatGPT } from "./openai.js";   
 import { askClaude } from "./claude.js";
+import { createChat, getLatestChatId, saveMessage, getMessages } from "./db.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -89,6 +90,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+
+    // The page asks for the newest chat when it opens.
+  if (req.method === "GET" && url.pathname === "/chat/latest") {
+    const chatId = getLatestChatId();
+    const messages = chatId ? getMessages(chatId) : [];
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ chatId, messages }));
+    return;
+  }
+
   // The chat page sends { provider, message } here and gets { reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
     // only allow our own page (stops other websites from using your AIs)
@@ -99,11 +110,15 @@ const server = createServer(async (req, res) => {
     }
     let body = "";
     for await (const chunk of req) body += chunk; // read what the page sent
-    const { provider, history } = JSON.parse(body);
+        const { chatId: sentChatId, provider, message } = JSON.parse(body);
+    const chatId = sentChatId ?? createChat(); // no chat yet? make one
+    saveMessage(chatId, "user", message, provider);
     try {
+      const history = getMessages(chatId); // the whole chat, from the database
       const reply = provider === "claude" ? await askClaude(history) : await askChatGPT(history);
+      saveMessage(chatId, "assistant", reply, provider); // blank: what the AI answered
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ reply }));
+      res.end(JSON.stringify({ chatId, reply }));
     } catch (err) {
       console.error(err);
       res.writeHead(500, { "Content-Type": "application/json" });

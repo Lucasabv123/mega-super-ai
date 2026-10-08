@@ -36,7 +36,7 @@
       messages.appendChild(div);
     }
 
-    const history = []; // every message so far
+    let chatId = null; // which chat we're in (null = start a new one)
 
     document.getElementById("form").addEventListener("submit", async (event) => {
       event.preventDefault(); // stop the page from reloading
@@ -45,19 +45,26 @@
       const message = input.value;
       if (!message) return;
       addBubble(message, "you");
-      history.push({ role: "user", content: message });
       input.value = "";
 
       const response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // TODO (2 blanks): which AI to use, and what you typed
-        body: JSON.stringify({ provider: provider, history: history }),
+        
+        body: JSON.stringify({ chatId: chatId, provider: provider, message: message }),
       });
       const data = await response.json();
-      if (data.reply) history.push({ role: "assistant", content: data.reply });
+      if (data.chatId) chatId = data.chatId;
       addBubble(data.reply ?? data.error, "ai");
     });
+        // When the page opens, show the newest chat from the database.
+    async function loadLatest() {
+      const response = await fetch("/chat/latest");
+      const data = await response.json();
+      chatId = data.chatId;
+      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai");
+    }
+    loadLatest();
   </script>
 </body>
 </html>
