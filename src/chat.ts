@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
+import { getAccessToken } from "./auth.js";
 
-const tokens = JSON.parse(readFileSync("data/tokens.json", "utf8"));
+const accessToken = await getAccessToken();
 
 const response = await fetch("https://api.openai.com/v1/responses", {
   method: "POST",
   headers: {
-    Authorization: `Bearer ${tokens.access_token}`,
+    Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
   },
   body: JSON.stringify({

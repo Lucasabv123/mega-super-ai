@@ -67,7 +67,7 @@ const server = createServer(async (req, res) => {
 
     try {
       const tokens = await exchangeCode(code, pendingVerifier, clientId);
-      writeFileSync("data/tokens.json", JSON.stringify(tokens, null, 2));
+      writeFileSync("data/tokens.json", JSON.stringify({ ...tokens, expires_at: Date.now() + tokens.expires_in * 1000 }, null, 2));
       console.log("Got tokens:", Object.keys(tokens)); // names only, never the values!
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("Signed in! Tokens saved.");
