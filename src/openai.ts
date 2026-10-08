@@ -25,13 +25,21 @@ if (!response.ok) {
 
 const text = await response.text();
 let reply = "";
+let tokens = 0; 
+let model = ""; 
+let effort = "";
 let finished = false;
 for (const line of text.split("\n")) {
   if (!line.startsWith("data: ")) continue;
   const event = JSON.parse(line.slice(6));
   if (event.type === "response.output_text.delta") reply += event.delta;
-  if (event.type === "response.completed") finished = true;
+  if (event.type === "response.completed") {
+    finished = true;
+    tokens = event.response.usage.total_tokens;
+    model = event.response.model;
+    effort = event.response.reasoning?.effort ?? "default";
+  }
 }
 if (!finished) throw new Error("ChatGPT did not finish");
-return reply;
+return { reply, tokens, model, effort };
 }

@@ -67,3 +67,13 @@ export function listMemories() {
 export function deleteMemory(id: number) {
   db.prepare("DELETE FROM memories WHERE id = ?").run(id);
 }
+
+
+export function usageToday() {
+  return db.prepare(`
+    SELECT provider, COUNT(*) AS count
+    FROM messages
+    WHERE role = 'assistant' AND date(created_at, 'localtime') = date('now', 'localtime')
+    GROUP BY provider
+  `).all() as { provider: string; count: number }[]; // blank: which column to count by
+}

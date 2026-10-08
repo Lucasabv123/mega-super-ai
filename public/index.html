@@ -7,6 +7,7 @@
     body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }
     h1 { position: absolute; top: 10px; left: 40px; margin: 0; }
     #newChat { position: absolute; top: 56px; left: 40px; }
+    #memoryBox { position: absolute; top:400px; left: 40px; width: 220px; }
     #oldChats { position: absolute; top: 90px; left: 40px; max-width: 220px; }
     #messages div { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
     .you { background: #e8f0fe; }
@@ -19,6 +20,12 @@
   <h1>Mega Super AI</h1>
   <button type="button" id="newChat">New chat</button>
   <select id="oldChats"></select>
+  <div id="memoryBox">
+  <b>Memory</b>
+  <ul id="memoryList"></ul>
+  <input id="memoryInput" placeholder="Add a fact..." autocomplete="off">
+  <button type="button" id="addMemory">Add</button>
+</div>
   <div id="messages"></div>
   <form id="form">
     <select id="provider">
@@ -101,6 +108,45 @@
       loadChatList();
     }
     loadLatest();
+    const memoryList = document.getElementById("memoryList");
+
+// Show all saved facts, each with an x button to delete it.
+async function loadMemories() {
+  const response = await fetch("/memories");
+  const memories = await response.json();
+  memoryList.innerHTML = "";
+  for (const memory of memories) {
+    const li = document.createElement("li");
+    li.textContent = memory.content + " ";
+    const del = document.createElement("button");
+    del.textContent = "x";
+    del.addEventListener("click", async () => {
+      await fetch("/memories/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: memory.id }),
+      });
+      loadMemories(); // show the list again without it
+    });
+    li.appendChild(del);
+    memoryList.appendChild(li);
+  }
+}
+
+// Add button: save the new fact, then show the list again.
+document.getElementById("addMemory").addEventListener("click", async () => {
+  const input = document.getElementById("memoryInput");
+  if (!input.value) return;
+  await fetch("/memories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: input.value }),
+  });
+  input.value = "";
+  loadMemories();
+});
+
+loadMemories();
   </script>
 </body>
 </html>

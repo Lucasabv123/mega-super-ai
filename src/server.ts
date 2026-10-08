@@ -8,7 +8,8 @@ import { getSavedClientId } from "./auth.js";
 import { askChatGPT } from "./openai.js";   
 import { askClaude } from "./claude.js";
 import { createChat, getLatestChatId, saveMessage, getMessages, listChats } from "./db.js";
-import { listMemories } from "./db.js";
+import { listMemories,addMemory,deleteMemory, usageToday } from "./db.js";    
+
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -23,7 +24,12 @@ let pendingVerifier = "";
 const server = createServer(async (req, res) => {
   // Turn the request into a URL object so we can read its parts.
   const url = new URL(req.url ?? "/", "http://127.0.0.1:1455");
-  // Log only the path, never the ?code=... part (that's a secret).
+  
+  if (req.method === "POST" && req.headers.origin && req.headers.origin !== "http://127.0.0.1:1455") {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
   console.log(`${req.method} ${url.pathname}`);
 
   // Start a sign-in: make fresh secrets, remember them, and send the browser to OpenAI.
@@ -115,9 +121,44 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ chatId, messages: getMessages(chatId) }));
         return;
     }
+
+      // Shared memory: list, add, delete.
+        if (req.method === "GET" && url.pathname === "/memories") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(listMemories()));
+            return;
+        }
+
+        if (req.method === "POST" && url.pathname === "/memories") {
+            let body = "";
+            for await (const chunk of req) body += chunk;
+            const { content } = JSON.parse(body);
+            addMemory(content); // blank 1
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+            return;
+        }
+
+        if (req.method === "POST" && url.pathname === "/memories/delete") {
+            let body = "";
+            for await (const chunk of req) body += chunk;
+            const { id } = JSON.parse(body);
+            deleteMemory(id); // blank 2
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+            return;
+        }
   
 
-  // The chat page sends { provider, message } here and gets { reply } back.
+  // GET /usage: how many answers each AI gave today.
+  if (req.method === "GET" && url.pathname === "/usage") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(usageToday()));
+    return;
+  }
+
+  // ===== POST /chat: the main chat route =====
+  // The page sends { chatId, provider, message } here and gets { chatId, reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
     // only allow our own page (stops other websites from using your AIs)
     if (req.headers.origin && req.headers.origin !== "http://127.0.0.1:1455") {
@@ -135,7 +176,8 @@ const server = createServer(async (req, res) => {
       const history = getMessages(chatId); // the whole chat, from the database
       const facts = listMemories().map((m) => "- " + m.content).join("\n");
       const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)");
-      const reply = provider === "claude" ? await askClaude(history, memory) : await askChatGPT(history, memory);
+      const { reply, tokens, model, effort } = provider === "claude" ? await askClaude(history, memory) : await askChatGPT(history, memory);
+      console.log(provider, model, effort, "used", tokens, "tokens");
       saveMessage(chatId, "assistant", reply, provider);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ chatId, reply }));
