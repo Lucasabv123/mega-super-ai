@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type { Message } from "./openai.js";
 
+
 // Opens the database file (creates it the first time).
 const db = new DatabaseSync("data/chats.db");
 
@@ -39,4 +40,12 @@ export function saveMessage(chatId: number, role: string, content: string, provi
 export function getMessages(chatId: number): Message[] {
   return db.prepare("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id")
     .all(chatId) as Message[];
+}
+
+export function listChats() {
+  return db.prepare(`
+    SELECT id,
+      (SELECT content FROM messages WHERE chat_id = chats.id ORDER BY id LIMIT 1) AS title
+    FROM chats ORDER BY id DESC
+  `).all() as { id: number; title: string }[];
 }

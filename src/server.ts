@@ -7,7 +7,7 @@ import { exchangeCode } from "./token.js";
 import { getSavedClientId } from "./auth.js";
 import { askChatGPT } from "./openai.js";   
 import { askClaude } from "./claude.js";
-import { createChat, getLatestChatId, saveMessage, getMessages } from "./db.js";
+import { createChat, getLatestChatId, saveMessage, getMessages, listChats } from "./db.js";
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
 const PORT = 1455;
@@ -91,14 +91,30 @@ const server = createServer(async (req, res) => {
   }
 
 
-    // The page asks for the newest chat when it opens.
-  if (req.method === "GET" && url.pathname === "/chat/latest") {
-    const chatId = getLatestChatId();
-    const messages = chatId ? getMessages(chatId) : [];
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ chatId, messages }));
-    return;
-  }
+        // The page asks for the newest chat when it opens.
+    if (req.method === "GET" && url.pathname === "/chat/latest") {
+        const chatId = getLatestChatId();
+        const messages = chatId ? getMessages(chatId) : [];
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ chatId, messages }));
+        return;
+    }
+
+        // The list of all chats, newest first.
+    if (req.method === "GET" && url.pathname === "/chats") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(listChats()));
+        return;
+    }
+
+    // One chat's messages, for example /chat/open?id=3
+    if (req.method === "GET" && url.pathname === "/chat/open") {
+        const chatId = Number(url.searchParams.get("id"));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ chatId, messages: getMessages(chatId) }));
+        return;
+    }
+  
 
   // The chat page sends { provider, message } here and gets { reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
@@ -108,6 +124,7 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
+    
     let body = "";
     for await (const chunk of req) body += chunk; // read what the page sent
         const { chatId: sentChatId, provider, message } = JSON.parse(body);
@@ -116,7 +133,7 @@ const server = createServer(async (req, res) => {
     try {
       const history = getMessages(chatId); // the whole chat, from the database
       const reply = provider === "claude" ? await askClaude(history) : await askChatGPT(history);
-      saveMessage(chatId, "assistant", reply, provider); // blank: what the AI answered
+      saveMessage(chatId, "assistant", reply, provider);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ chatId, reply }));
     } catch (err) {

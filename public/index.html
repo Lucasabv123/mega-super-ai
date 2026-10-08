@@ -6,6 +6,8 @@
   <style>
     body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }
     h1 { position: absolute; top: 10px; left: 40px; margin: 0; }
+    #newChat { position: absolute; top: 56px; left: 40px; }
+    #oldChats { position: absolute; top: 90px; left: 40px; max-width: 220px; }
     #messages div { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
     .you { background: #e8f0fe; }
     .ai { background: #f1f1f1; }
@@ -15,6 +17,8 @@
 </head>
 <body>
   <h1>Mega Super AI</h1>
+  <button type="button" id="newChat">New chat</button>
+  <select id="oldChats"></select>
   <div id="messages"></div>
   <form id="form">
     <select id="provider">
@@ -37,6 +41,36 @@
     }
 
     let chatId = null; // which chat we're in (null = start a new one)
+    const oldChats = document.getElementById("oldChats");
+    // New chat: forget the current chat and clear the screen.
+    document.getElementById("newChat").addEventListener("click", () => {
+      chatId = null;
+      messages.innerHTML = ""; 
+      oldChats.value = "";
+    });
+
+    // Fill the dropdown with all saved chats.
+    async function loadChatList() {
+      const response = await fetch("/chats");
+      const chats = await response.json();
+      oldChats.innerHTML = "";
+      for (const chat of chats) {
+        const option = document.createElement("option");
+        option.value = chat.id;
+        option.textContent = chat.title.slice(0, 40); // first 40 letters
+        oldChats.appendChild(option);
+      }
+      oldChats.value = chatId ?? ""; // show which chat is open
+    }
+
+    // Picking a chat in the dropdown opens it.
+    oldChats.addEventListener("change", async () => {
+      const response = await fetch("/chat/open?id=" + oldChats.value);
+      const data = await response.json();
+      chatId = data.chatId;
+      messages.innerHTML = "";
+      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai");
+    });
 
     document.getElementById("form").addEventListener("submit", async (event) => {
       event.preventDefault(); // stop the page from reloading
@@ -55,6 +89,7 @@
       });
       const data = await response.json();
       if (data.chatId) chatId = data.chatId;
+      loadChatList();
       addBubble(data.reply ?? data.error, "ai");
     });
         // When the page opens, show the newest chat from the database.
@@ -63,6 +98,7 @@
       const data = await response.json();
       chatId = data.chatId;
       for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai");
+      loadChatList();
     }
     loadLatest();
   </script>
