@@ -17,3 +17,22 @@ export async function exchangeCode(code: string, verifier: string, clientId: str
   }
   return await response.json();
 }
+export async function refreshTokens(refreshToken: string, clientId: string) {
+
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",   
+    client_id: clientId,
+    refresh_token: refreshToken, 
+    resource: "https://api.openai.com/v1",
+  });
+
+  const response = await fetch("https://auth.openai.com/api/accounts/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body,
+  });
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${await response.text()}`);
+  }
+  return await response.json();
+}
