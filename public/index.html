@@ -14,8 +14,11 @@
     #messages div { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
     .you { background: #e8f0fe; }
     .ai { background: #f1f1f1; }
+    .judge { background: #fff4d6; }
+    .model { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
     form { display: flex; gap: 8px; position: fixed; bottom: 20px; left: 0; right: 0; max-width: 668px; margin: 0 auto; }
     input { flex: 1; padding: 8px; }
+    #files { flex: none; width: 190px; }
   </style>
 </head>
 <body>
@@ -45,27 +48,47 @@
       <progress id="claudeSessionBar" max="100" value="0"></progress>
       <div>Week: <span id="claudeWeekText">loading...</span></div>
       <progress id="claudeWeekBar" max="100" value="0"></progress>
+      <div>Fable week: <span id="claudeFableText">loading...</span></div>
+      <progress id="claudeFableBar" max="100" value="0"></progress>
     </div>
   </div>
   <div id="messages"></div>
   <form id="form">
     <select id="provider">
+      <option value="auto">Auto</option>
       <option value="chatgpt">ChatGPT</option>
       <option value="claude">Claude</option>
+      <option value="debate">Debate</option>
     </select>
     <input id="message" placeholder="Type a message..." autocomplete="off">
+    <input id="files" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.csv,.json,.html,.css,.js,.ts,.py">
     <button>Send</button>
   </form>
 
   <script>
     const messages = document.getElementById("messages");
 
-    // Adds one chat bubble to the page.
-    function addBubble(text, who) {
+    // Adds one chat bubble to the page. AI bubbles also show which model and effort wrote them.
+    function addBubble(text, who, model, effort, reason) {
       const div = document.createElement("div");
       div.className = who;
-      div.textContent = text; // textContent, so AI text can't run code on your page
+      if (model) {
+        const label = document.createElement("span");
+        label.className = "model";
+        label.textContent = model + " · " + effort + (reason ? " · auto: " + reason : "");
+        div.appendChild(label);
+      }
+      div.append(text); // plain text, so AI text can't run code on your page
       messages.appendChild(div);
+    }
+
+    // Reads one picked file as a data URL ("data:image/png;base64,..."), so it can travel inside JSON.
+    function readFile(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, type: file.type, dataUrl: reader.result });
+        reader.readAsDataURL(file);
+      });
     }
 
     let chatId = null; // which chat we're in (null = start a new one)
@@ -97,28 +120,38 @@
       const data = await response.json();
       chatId = data.chatId;
       messages.innerHTML = "";
-      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai");
+      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai", m.model, m.effort);
     });
 
     document.getElementById("form").addEventListener("submit", async (event) => {
       event.preventDefault(); // stop the page from reloading
       const provider = document.getElementById("provider").value;
       const input = document.getElementById("message");
-      const message = input.value;
-      if (!message) return;
+      const picker = document.getElementById("files");
+      const files = await Promise.all([...picker.files].map(readFile));
+      if (!input.value && files.length === 0) return;
+      // Your text plus one line per file, like "📎 photo.png", so the chat shows what you attached.
+      const message = (input.value + files.map((f) => "\n📎 " + f.name).join("")).trim();
       addBubble(message, "you");
       input.value = "";
+      picker.value = ""; // empty the file picker for the next message
 
       const response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         
-        body: JSON.stringify({ chatId: chatId, provider: provider, message: message }),
+        body: JSON.stringify({ chatId: chatId, provider: provider, message: message, files: files }),
       });
       const data = await response.json();
       if (data.chatId) chatId = data.chatId;
       loadChatList();
-      addBubble(data.reply ?? data.error, "ai");
+      if (data.answers) {
+        // Debate: show both answers, then the judge's verdict.
+        for (const a of data.answers) addBubble(a.reply, "ai", a.model, a.effort, a.reason);
+        addBubble(data.judge.reply, "ai judge", data.judge.model, data.judge.effort);
+      } else {
+        addBubble(data.reply ?? data.error, "ai", data.model, data.effort, data.reason);
+      }
       loadUsageBar(); // update the bars after each answer
       loadClaudeUsage();
     });
@@ -127,7 +160,7 @@
       const response = await fetch("/chat/latest");
       const data = await response.json();
       chatId = data.chatId;
-      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai");
+      for (const m of data.messages) addBubble(m.content, m.role === "user" ? "you" : "ai", m.model, m.effort);
       loadChatList();
     }
     loadLatest();
@@ -212,6 +245,10 @@ async function loadClaudeUsage() {
   if (usage.week) {
     document.getElementById("claudeWeekBar").value = usage.week.left;
     document.getElementById("claudeWeekText").textContent = usage.week.left + "% left, resets " + usage.week.resets;
+  }
+  if (usage.fable) {
+    document.getElementById("claudeFableBar").value = usage.fable.left;
+    document.getElementById("claudeFableText").textContent = usage.fable.left + "% left, resets " + usage.fable.resets;
   }
 }
 loadClaudeUsage();

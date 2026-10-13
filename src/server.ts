@@ -6,10 +6,12 @@ import { buildAuthorizeUrl } from "./authUrl.js";
 import { exchangeCode } from "./token.js";
 import { getSavedClientId } from "./auth.js";
 import { askChatGPT } from "./openai.js";
-import { createChat, getLatestChatId, saveMessage, getMessages, listChats } from "./db.js";
+import { createChat, getLatestChatId, saveMessage, getMessages, listChats, getMessagesForPage } from "./db.js";
 import { listMemories,addMemory,deleteMemory, usageToday, tokensSince, saveReading, latestReading } from "./db.js";    
 import { usageBar } from "./usageBar.js";
 import { askClaude, claudeUsage } from "./claude.js";
+import { pickModelSmart } from "./router.js";
+import { debate } from "./debate.js";
 
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
@@ -102,7 +104,7 @@ const server = createServer(async (req, res) => {
         // The page asks for the newest chat when it opens.
     if (req.method === "GET" && url.pathname === "/chat/latest") {
         const chatId = getLatestChatId();
-        const messages = chatId ? getMessages(chatId) : [];
+        const messages = chatId ? getMessagesForPage(chatId) : [];
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ chatId, messages }));
         return;
@@ -119,7 +121,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/chat/open") {
         const chatId = Number(url.searchParams.get("id"));
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ chatId, messages: getMessages(chatId) }));
+        res.end(JSON.stringify({ chatId, messages: getMessagesForPage(chatId) }));
         return;
     }
 
@@ -216,18 +218,36 @@ const server = createServer(async (req, res) => {
     
     let body = "";
     for await (const chunk of req) body += chunk; // read what the page sent
-        const { chatId: sentChatId, provider, message } = JSON.parse(body);
+    const { chatId: sentChatId, provider: chosen, message, files = [] } = JSON.parse(body); // files: pictures/documents you attached
+    // "auto": the router picks the AI, model and effort from your message. Otherwise use the AI you picked, with its usual model.
+    const pick = chosen === "auto" ? await pickModelSmart(message) : { provider: chosen, model: undefined, effort: undefined, reason: undefined };
+    const provider = pick.provider;
     const chatId = sentChatId ?? createChat(); // no chat yet? make one
     saveMessage(chatId, "user", message, provider);
     try {
       const history = getMessages(chatId); // the whole chat, from the database
       const facts = listMemories().map((m) => "- " + m.content).join("\n");
       const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)");
-      const { reply, tokens, model, effort } = provider === "claude" ? await askClaude(history, memory) : await askChatGPT(history, memory);
+
+      // Debate mode: both AIs answer, then a judge picks the better answer.
+      if (chosen === "debate") {
+        const d = await debate(history, memory, files);
+        saveMessage(chatId, "assistant", d.chatgpt.reply, "chatgpt", d.chatgpt.tokens, d.chatgpt.model, d.chatgpt.effort);
+        saveMessage(chatId, "assistant", d.claude.reply, "claude", d.claude.tokens, d.claude.model, d.claude.effort);
+        saveMessage(chatId, "assistant", d.judge.reply, "claude", d.judge.tokens, d.judge.model, d.judge.effort);
+        console.log("debate used", d.chatgpt.tokens, "+", d.claude.tokens, "+", d.judge.tokens, "tokens");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ chatId, answers: [d.chatgpt, d.claude], judge: d.judge }));
+        return;
+      }
+
+      const { reply, tokens, model, effort } = provider === "claude"
+        ? await askClaude(history, memory, pick.model, pick.effort, files)
+        : await askChatGPT(history, memory, pick.model, pick.effort, files);
       console.log(provider, model, effort, "used", tokens, "tokens");
       saveMessage(chatId, "assistant", reply, provider, tokens, model, effort);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ chatId, reply }));
+      res.end(JSON.stringify({ chatId, reply, model, effort, reason: pick.reason }));
     } catch (err) {
       console.error(err);
       res.writeHead(500, { "Content-Type": "application/json" });

@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mega Super AI</title>
+  <style>
+    body { font-family: sans-serif; margin: 12px; }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px; font-size: 15px; }
+    .model { display: block; font-size: 12px; color: #666; margin-top: 10px; }
+    #answer { margin-top: 4px; white-space: pre-wrap; max-height: 230px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <form id="form">
+    <input id="question" placeholder="Ask about your screen..." autocomplete="off" autofocus>
+    <button>Ask</button>
+  </form>
+  <span id="label" class="model"></span>
+  <div id="answer"></div>
+
+  <script>
+    const input = document.getElementById("question");
+    const label = document.getElementById("label");
+    const answer = document.getElementById("answer");
+
+    document.getElementById("form").addEventListener("submit", async (event) => {
+      event.preventDefault(); // stop the page from reloading
+      const question = input.value;
+      if (!question) return;
+      label.textContent = "";
+      answer.textContent = "Looking at your screen...";
+      const data = await window.mega.ask(question); // screenshot + question go to your server
+      if (data.model) label.textContent = data.model + " · " + data.effort + (data.reason ? " · auto: " + data.reason : "");
+      answer.textContent = data.reply ?? data.error;
+      input.value = "";
+    });
+
+    // Esc hides the pop-up. Opening it again puts the cursor back in the box.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") window.mega.hide();
+    });
+    window.addEventListener("focus", () => input.focus());
+  </script>
+</body>
+</html>

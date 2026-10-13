@@ -6,12 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/server.ts",
+    "screen": "electron overlay/main.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "electron": "^44.7.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

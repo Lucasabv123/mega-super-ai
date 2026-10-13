@@ -63,6 +63,11 @@ export function getMessages(chatId: number): Message[] {
     .all(chatId) as Message[];
 }
 
+// One chat's messages for the page, with which model and effort wrote each answer.
+export function getMessagesForPage(chatId: number) {
+  return db.prepare("SELECT role, content, model, effort FROM messages WHERE chat_id = ? ORDER BY id").all(chatId);
+}
+
 export function listChats() {
   return db.prepare(`
     SELECT id,
@@ -103,6 +108,17 @@ export function tokensSince(provider: string, since: string) {
     WHERE role = 'assistant' AND provider = ? AND datetime(created_at, 'localtime') >= ?
   `).get(provider, since) as { tokens: number | null; answers: number };
   return { tokens: row.tokens ?? 0, answers: row.answers };
+}
+
+// ChatGPT tokens since a time, split by model (pricier models use up more of the limit).
+export function chatgptTokensByModel(since: string) {
+  return db.prepare(`
+    SELECT model, SUM(tokens) AS tokens
+    FROM messages
+    WHERE role = 'assistant' AND (provider = 'chatgpt' OR model LIKE 'gpt-%')
+      AND datetime(created_at, 'localtime') >= ?
+    GROUP BY model
+  `).all(since) as { model: string | null; tokens: number | null }[];
 }
 
 // Your ChatGPT Settings > Usage readings: % left and reset times, like "2026-10-12 21:30".
