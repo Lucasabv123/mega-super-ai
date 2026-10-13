@@ -34,3 +34,17 @@ export async function askClaude(history: Message[], memory: string)  {
   const tokens = u.input_tokens + u.output_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   return { reply: data.result, tokens, model: Object.keys(data.modelUsage).join(", "), effort: EFFORT };
 }
+
+    // Reads your real Claude plan usage with Claude Code's /usage command.
+    // It runs on your Mac without asking Claude anything, so it uses no tokens.
+    export async function claudeUsage() {
+    const { stdout } = await run(CLAUDE, ["-p", "/usage", "--output-format", "json", "--no-session-persistence"]);
+    const text: string = JSON.parse(stdout).result;
+    // Find "Current session: 1% used · resets Oct 13 at 5:50pm (" and keep the 1 and the time.
+    const session = text.match(/Current session: (\d+)% used.*?resets (.+?) \(/);
+    const week = text.match(/Current week \(all models\): (\d+)% used.*?resets (.+?) \(/);
+    return {
+        session: session ? { left: 100 - Number(session[1]), resets: session[2] } : null,
+        week: week ? { left: 100 - Number(week[1]), resets: week[2] } : null,
+    };
+    }

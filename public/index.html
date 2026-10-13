@@ -9,6 +9,8 @@
     #newChat { position: absolute; top: 56px; left: 40px; }
     #memoryBox { position: absolute; top:400px; left: 40px; width: 220px; }
     #oldChats { position: absolute; top: 90px; left: 40px; max-width: 220px; }
+    #usageBox { position: absolute; top: 90px; right: 40px; width: 220px; }
+    #claudeUsage { margin-top: 16px; }
     #messages div { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
     .you { background: #e8f0fe; }
     .ai { background: #f1f1f1; }
@@ -25,7 +27,26 @@
   <ul id="memoryList"></ul>
   <input id="memoryInput" placeholder="Add a fact..." autocomplete="off">
   <button type="button" id="addMemory">Add</button>
-</div>
+  </div>
+  <div id="usageBox">
+    <b>ChatGPT usage</b>
+    <div>5-hour: <span id="fiveHourText">no reading yet</span></div>
+    <progress id="fiveHourBar" max="100" value="0"></progress>
+    <div>Week: <span id="weeklyText">no reading yet</span></div>
+    <progress id="weeklyBar" max="100" value="0"></progress>
+    <input id="fiveHourLeft" placeholder="5-hour % left" autocomplete="off">
+    <input id="fiveHourResets" placeholder="5-hour reset time" autocomplete="off">
+    <input id="weeklyLeft" placeholder="Week % left" autocomplete="off">
+    <input id="weeklyResets" placeholder="Week reset time" autocomplete="off">
+    <button type="button" id="saveReading">Save reading</button>
+    <div id="claudeUsage">
+      <b>Claude usage</b>
+      <div>Session: <span id="claudeSessionText">loading...</span></div>
+      <progress id="claudeSessionBar" max="100" value="0"></progress>
+      <div>Week: <span id="claudeWeekText">loading...</span></div>
+      <progress id="claudeWeekBar" max="100" value="0"></progress>
+    </div>
+  </div>
   <div id="messages"></div>
   <form id="form">
     <select id="provider">
@@ -98,6 +119,8 @@
       if (data.chatId) chatId = data.chatId;
       loadChatList();
       addBubble(data.reply ?? data.error, "ai");
+      loadUsageBar(); // update the bars after each answer
+      loadClaudeUsage();
     });
         // When the page opens, show the newest chat from the database.
     async function loadLatest() {
@@ -145,8 +168,53 @@ document.getElementById("addMemory").addEventListener("click", async () => {
   input.value = "";
   loadMemories();
 });
-
 loadMemories();
+// Show the estimated % left on the two bars.
+async function loadUsageBar() {
+  const response = await fetch("/usage/bar");
+  const bar = await response.json();
+  if (!bar) return; // no reading saved yet
+  document.getElementById("fiveHourBar").value = bar.fiveHour.left;
+  document.getElementById("fiveHourText").textContent = bar.fiveHour.left + "% left, resets " + bar.fiveHour.resets;
+  document.getElementById("weeklyBar").value = bar.weekly.left;
+  document.getElementById("weeklyText").textContent = bar.weekly.left + "% left, resets " + bar.weekly.resets;
+}
+
+// Save reading button: send the 4 boxes to /reading, then show the bars again.
+document.getElementById("saveReading").addEventListener("click", async () => {
+  // Don't save if any box is empty.
+  for (const id of ["fiveHourLeft", "fiveHourResets", "weeklyLeft", "weeklyResets"]) {
+    if (!document.getElementById(id).value) return;
+  }
+  await fetch("/reading", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fiveHourLeft: Number(document.getElementById("fiveHourLeft").value), // Number turns the text "70" into the number 70
+      fiveHourResets: document.getElementById("fiveHourResets").value,
+      weeklyLeft: Number(document.getElementById("weeklyLeft").value),
+      weeklyResets: document.getElementById("weeklyResets").value,
+    }),
+  });
+  loadUsageBar();
+});
+
+loadUsageBar();
+
+// Show your real Claude plan usage on the two Claude bars.
+async function loadClaudeUsage() {
+  const response = await fetch("/usage/claude");
+  const usage = await response.json();
+  if (usage.session) {
+    document.getElementById("claudeSessionBar").value = usage.session.left;
+    document.getElementById("claudeSessionText").textContent = usage.session.left + "% left, resets " + usage.session.resets;
+  }
+  if (usage.week) {
+    document.getElementById("claudeWeekBar").value = usage.week.left;
+    document.getElementById("claudeWeekText").textContent = usage.week.left + "% left, resets " + usage.week.resets;
+  }
+}
+loadClaudeUsage();
   </script>
 </body>
 </html>

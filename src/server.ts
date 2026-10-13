@@ -5,10 +5,11 @@ import { makeAuthSecrets } from "./pkce.js";
 import { buildAuthorizeUrl } from "./authUrl.js";
 import { exchangeCode } from "./token.js";
 import { getSavedClientId } from "./auth.js";
-import { askChatGPT } from "./openai.js";   
-import { askClaude } from "./claude.js";
+import { askChatGPT } from "./openai.js";
 import { createChat, getLatestChatId, saveMessage, getMessages, listChats } from "./db.js";
-import { listMemories,addMemory,deleteMemory, usageToday } from "./db.js";    
+import { listMemories,addMemory,deleteMemory, usageToday, tokensSince, saveReading, latestReading } from "./db.js";    
+import { usageBar } from "./usageBar.js";
+import { askClaude, claudeUsage } from "./claude.js";
 
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
@@ -157,6 +158,52 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // GET /usage/since?provider=chatgpt&since=2026-10-08 17:30
+  // Tokens one AI used since a start time, for comparing with ChatGPT's Settings > Usage %.
+  if (req.method === "GET" && url.pathname === "/usage/since") {
+    const provider = url.searchParams.get("provider") ?? "chatgpt";
+    const since = url.searchParams.get("since") ?? "";
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ provider, since, ...tokensSince(provider, since) }));
+    return;
+  }
+
+  // POST /reading: save what you read in ChatGPT Settings > Usage.
+  if (req.method === "POST" && url.pathname === "/reading") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const r = JSON.parse(body);
+    saveReading(r.fiveHourLeft, r.fiveHourResets, r.weeklyLeft, r.weeklyResets);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /reading: your latest reading.
+  if (req.method === "GET" && url.pathname === "/reading") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(latestReading() ?? null));
+    return;
+  }
+
+  // GET /usage/bar: estimated % left of your ChatGPT limits.
+  if (req.method === "GET" && url.pathname === "/usage/bar") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(usageBar()));
+    return;
+  }
+
+  // GET /usage/claude: your real Claude plan usage, from Claude Code's /usage.
+  if (req.method === "GET" && url.pathname === "/usage/claude") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    try {
+      res.end(JSON.stringify(await claudeUsage()));
+    } catch {
+      res.end(JSON.stringify({ session: null, week: null })); // claude failed, so send no numbers instead of crashing
+    }
+    return;
+  }
+
   // ===== POST /chat: the main chat route =====
   // The page sends { chatId, provider, message } here and gets { chatId, reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
@@ -178,7 +225,7 @@ const server = createServer(async (req, res) => {
       const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)");
       const { reply, tokens, model, effort } = provider === "claude" ? await askClaude(history, memory) : await askChatGPT(history, memory);
       console.log(provider, model, effort, "used", tokens, "tokens");
-      saveMessage(chatId, "assistant", reply, provider);
+      saveMessage(chatId, "assistant", reply, provider, tokens, model, effort);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ chatId, reply }));
     } catch (err) {
