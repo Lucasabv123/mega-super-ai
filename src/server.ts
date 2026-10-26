@@ -12,6 +12,9 @@ import { usageBar } from "./usageBar.js";
 import { askClaude, claudeUsage } from "./claude.js";
 import { pickModelSmart } from "./router.js";
 import { debate } from "./debate.js";
+import { SCREEN_RULES } from "./screen.js";
+import { smartAuto } from "./auto.js";
+import { browseStep } from "./browse.js";
 
 
 const HOST = "127.0.0.1"; // only this computer can connect, not your network
@@ -206,6 +209,34 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // ===== POST /browse: one step of the pop-up browsing Safari for you =====
+  // The pop-up sends the page it read. We answer { open: link } or { answer }, and save the answer in the pop-up's chat.
+  if (req.method === "POST" && url.pathname === "/browse") {
+    if (req.headers.origin && req.headers.origin !== "http://127.0.0.1:1455") {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const { chatId, mode, question, page, visited = [], left = 0, tokens = 0 } = JSON.parse(body);
+    try {
+      const step = await browseStep(question, page, visited, left, mode);
+      const used = tokens + step.tokens; // tokens for all pages so far
+      console.log("browse:", step.model, step.open ? "opens " + step.open.url : "answers", "(" + used + " tokens so far)");
+      if (step.answer !== undefined) {
+        saveMessage(chatId, "assistant", step.answer, mode === "claude" ? "claude" : "chatgpt", used, step.model, step.effort);
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ open: step.open, answer: step.answer, model: step.model, effort: step.effort, tokens: used }));
+    } catch (err) {
+      console.error(err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Something went wrong, check Terminal" }));
+    }
+    return;
+  }
+
   // ===== POST /chat: the main chat route =====
   // The page sends { chatId, provider, message } here and gets { chatId, reply } back.
   if (req.method === "POST" && url.pathname === "/chat") {
@@ -218,16 +249,20 @@ const server = createServer(async (req, res) => {
     
     let body = "";
     for await (const chunk of req) body += chunk; // read what the page sent
-    const { chatId: sentChatId, provider: chosen, message, files = [] } = JSON.parse(body); // files: pictures/documents you attached
-    // "auto": the router picks the AI, model and effort from your message. Otherwise use the AI you picked, with its usual model.
-    const pick = chosen === "auto" ? await pickModelSmart(message) : { provider: chosen, model: undefined, effort: undefined, reason: undefined };
+    const { chatId: sentChatId, provider: chosen, message, files = [], screen = false } = JSON.parse(body); // files: pictures/documents you attached, screen: sent by the pop-up
+    // "low" (Low power): simple word rules pick the AI, model and effort. Auto picks later (see auto.ts).
+    // Otherwise use the AI you picked, with its usual model.
+    let pick = chosen === "low" ? await pickModelSmart(message) : { provider: chosen, model: undefined, effort: undefined, reason: undefined };
+    // The pop-up's action rules are too much for the cheapest model, so pop-up questions get your everyday model instead.
+    if (screen && pick.model === "gpt-6-luna") pick = { provider: "chatgpt", model: "gpt-6.1-sol", effort: "medium", reason: "pop-up" };
     const provider = pick.provider;
     const chatId = sentChatId ?? createChat(); // no chat yet? make one
     saveMessage(chatId, "user", message, provider);
     try {
       const history = getMessages(chatId); // the whole chat, from the database
       const facts = listMemories().map((m) => "- " + m.content).join("\n");
-      const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)");
+      const memory = "Things to remember about the user:\n" + (facts || "(nothing yet)")
+        + (screen ? "\n\n" + SCREEN_RULES : ""); // the pop-up also gets the rules for actions
 
       // Debate mode: both AIs answer, then a judge picks the better answer.
       if (chosen === "debate") {
@@ -241,9 +276,19 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      // Auto: rates your message, picks a model and climbs to a stronger one when needed.
+      if (chosen === "auto") {
+        const a = await smartAuto(chatId, history, memory, files, screen);
+        console.log("auto:", a.provider, a.model, a.effort, "used", a.tokens, "tokens (" + a.reason + ")");
+        saveMessage(chatId, "assistant", a.reply, a.provider, a.tokens, a.model, a.effort);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ chatId, reply: a.reply, model: a.model, effort: a.effort, reason: a.reason }));
+        return;
+      }
+
       const { reply, tokens, model, effort } = provider === "claude"
-        ? await askClaude(history, memory, pick.model, pick.effort, files)
-        : await askChatGPT(history, memory, pick.model, pick.effort, files);
+        ? await askClaude(history, memory, pick.model, pick.effort, files, true) // true = Claude may search the web
+        : await askChatGPT(history, memory, pick.model, pick.effort, files, true); // true = ChatGPT may search the web
       console.log(provider, model, effort, "used", tokens, "tokens");
       saveMessage(chatId, "assistant", reply, provider, tokens, model, effort);
       res.writeHead(200, { "Content-Type": "application/json" });

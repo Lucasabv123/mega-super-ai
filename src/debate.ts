@@ -10,9 +10,10 @@ export async function debate(history: Message[], memory: string, files: Attachme
   const pick = pickBoth(question);
 
   // Both AIs answer at the same time (Promise.all waits for both).
+  // true = each may search the web, and decides for itself if the question needs it.
   const [chatgpt, claude] = await Promise.all([
-    askChatGPT(history, memory, pick.chatgpt.model, pick.chatgpt.effort, files),
-    askClaude(history, memory, pick.claude.model, pick.claude.effort, files),
+    askChatGPT(history, memory, pick.chatgpt.model, pick.chatgpt.effort, files, true),
+    askClaude(history, memory, pick.claude.model, pick.claude.effort, files, true),
   ]);
 
   // Shuffle and hide the names, so the judge can't favor one AI.
@@ -24,10 +25,11 @@ export async function debate(history: Message[], memory: string, files: Attachme
     "\n\nAnswer A:\n" + a.reply +
     "\n\nAnswer B:\n" + b.reply +
     '\n\nWhich answer is better? Write only "A" or "B" on the first line, then explain why in 2 or 3 sentences.';
-  const judge = await askClaude([{ role: "user", content: prompt }], "You are a fair judge comparing two answers.", "fable", "medium");
+  // The judge may search the web too, to check facts when it needs to.
+  const judge = await askClaude([{ role: "user", content: prompt }], "You are a fair judge comparing two answers. Search the web only if you need it to check which answer is right.", "fable", "medium", [], true);
 
   // Read the judge's pick ("A" or "B") and turn it back into a name.
-  const pickedA = judge.reply.trim().startsWith("A");
+  const pickedA = judge.reply.match(/^\W*([AB])\b/m)?.[1] === "A"; // the first line that starts with A or B, even as **A**
   const winner = pickedA === claudeIsA ? "Claude" : "ChatGPT";
   const names = claudeIsA ? "A was Claude, B was ChatGPT" : "A was ChatGPT, B was Claude";
   const verdict = "Winner: " + winner + " (" + names + ")\n\n" + judge.reply;

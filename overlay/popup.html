@@ -7,34 +7,81 @@
     body { font-family: sans-serif; margin: 12px; }
     form { display: flex; gap: 8px; }
     input { flex: 1; padding: 8px; font-size: 15px; }
+    select { padding: 6px; font-size: 14px; }
     .model { display: block; font-size: 12px; color: #666; margin-top: 10px; }
-    #answer { margin-top: 4px; white-space: pre-wrap; max-height: 230px; overflow-y: auto; }
+    #answer { margin-top: 4px; white-space: pre-wrap; max-height: 190px; overflow-y: auto; }
+    #confirm { margin-top: 10px; padding: 8px; background: #fff4d6; border-radius: 8px; }
+    #preview { margin: 6px 0; padding: 6px; background: white; white-space: pre-wrap; max-height: 90px; overflow-y: auto; }
   </style>
 </head>
 <body>
   <form id="form">
     <input id="question" placeholder="Ask about your screen..." autocomplete="off" autofocus>
+    <select id="mode" title="Which AI answers">
+      <option value="auto">Auto</option>
+      <option value="low">Low power</option>
+      <option value="chatgpt">ChatGPT</option>
+      <option value="claude">Claude</option>
+      <option value="debate">Debate</option>
+    </select>
     <button>Ask</button>
   </form>
   <span id="label" class="model"></span>
   <div id="answer"></div>
+  <div id="confirm" hidden>
+    <span id="confirmText"></span>
+    <div id="preview" hidden></div>
+    <button type="button" id="yes">Yes</button>
+    <button type="button" id="no">No</button>
+  </div>
 
   <script>
     const input = document.getElementById("question");
     const label = document.getElementById("label");
     const answer = document.getElementById("answer");
+    const confirmBox = document.getElementById("confirm");
+    const mode = document.getElementById("mode");
+
+    // Remember the mode you picked, even after you restart the pop-up.
+    try { mode.value = localStorage.getItem("mode") || "auto"; } catch {}
+    if (!mode.value) mode.value = "auto"; // the saved mode doesn't exist anymore
+    mode.addEventListener("change", () => {
+      try { localStorage.setItem("mode", mode.value); } catch {}
+      input.focus(); // back to typing your question
+    });
 
     document.getElementById("form").addEventListener("submit", async (event) => {
       event.preventDefault(); // stop the page from reloading
       const question = input.value;
       if (!question) return;
       label.textContent = "";
+      confirmBox.hidden = true;
       answer.textContent = "Looking at your screen...";
-      const data = await window.mega.ask(question); // screenshot + question go to your server
+      const data = await window.mega.ask(question, mode.value); // screenshot + question + mode go to your server
       if (data.model) label.textContent = data.model + " · " + data.effort + (data.reason ? " · auto: " + data.reason : "");
       answer.textContent = data.reply ?? data.error;
       input.value = "";
+      // The AI wants to do something: ask first.
+      if (data.action) {
+        document.getElementById("confirmText").textContent = data.action + " ";
+        const preview = document.getElementById("preview");
+        preview.textContent = data.preview ?? "";
+        preview.hidden = !data.preview; // only typing has text to check
+        confirmBox.hidden = false;
+      }
     });
+
+    // While it browses, show what it's doing.
+    window.mega.onProgress((text) => { answer.textContent = text; });
+
+    // Yes / No: tell the pop-up's brain what you decided.
+    async function decide(yes) {
+      confirmBox.hidden = true;
+      const result = await window.mega.confirm(yes);
+      if (result.error) answer.textContent = result.error;
+    }
+    document.getElementById("yes").addEventListener("click", () => decide(true));
+    document.getElementById("no").addEventListener("click", () => decide(false));
 
     // Esc hides the pop-up. Opening it again puts the cursor back in the box.
     document.addEventListener("keydown", (event) => {
